@@ -33,11 +33,16 @@ EXPECTED_SEQUENCE = 0
 
 def process_packet(decoded):
   global EXPECTED_SEQUENCE
+  packet_buffer = {}
+
   sequence = decoded['sequence']
 
   log("[recv data] " + str(decoded['sequence']) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
   if (sequence != EXPECTED_SEQUENCE):
-    log("[duplicates] data already receieved")
+    if (sequence <= EXPECTED_SEQUENCE):
+      log("[duplicates] data already receieved")
+    else:
+      log("[out-of-order] recieved ")
   else:
     sys.stdout.buffer.write(data)
     sys.stderr.write("\n")
