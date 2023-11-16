@@ -29,19 +29,20 @@ sock.settimeout(TIMEOUT)
 # Get port we bound to
 UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
-LAST_SEQUENCE = -1
+EXPECTED_SEQUENCE = 0
 
 def process_packet(decoded):
-  global LAST_SEQUENCE
+  global EXPECTED_SEQUENCE
   sequence = decoded['sequence']
 
   log("[recv data] " + str(decoded['sequence']) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
-  if (sequence == LAST_SEQUENCE):
+  if (sequence != EXPECTED_SEQUENCE):
     log("[duplicates] data already receieved")
   else:
     sys.stdout.buffer.write(data)
     sys.stderr.write("\n")
-    LAST_SEQUENCE = int(sequence)
+    EXPECTED_SEQUENCE += len(data)
+
   # Send back an ack to the sender
   msg = json.dumps({"ack": decoded['sequence'] + len(data)})
   log("ABOUT TO SEND " + msg)
@@ -54,12 +55,11 @@ while True:
   try:
     log("ABOUT TO SLEEP")
     result = sock.recvfrom(MSG_SIZE)
-
     # If nothing is ready, we hit the timeout
     (data, addr) = result # note, data is bytes, so we must convert back to string before use
     try:
       decoded = json.loads(data.decode())
-
+      
       # If the EOF flag is set, exit
       if (decoded['eof']):
         log("[completed]")
@@ -78,3 +78,22 @@ while True:
   except socket.timeout:
     log("[error] timeout or fin happened")
     sys.exit(0)
+
+
+# Example buffer structure
+packet_buffer = {}
+expected_sequence = 0  # Initialize with the expected sequence number
+if decoded['sequence'] == expected_sequence:
+    # Process the packet
+    process_packet(decoded)
+    expected_sequence += len(data)
+else:
+    # Buffer the out-of-order packet
+    packet_buffer[decoded['sequence']] = decoded
+
+while (expected_sequence in packet_buffer):
+    # Process the buffered packet
+    buffered_packet = packet_buffer[expected_sequence]
+    process_packet(buffered_packet)
+    del packet_buffer[expected_sequence]
+    expected_sequence += len(buffered_packet['data'])

@@ -17,7 +17,7 @@ DATA_SIZE = 1060
 TIMEOUT = 5
 SEQUENCE = 0
 # Assumes the advertised window is 1 (for part 3) (unit is bytes)
-ADVWINDOW = 1
+ADVWINDOW = 3
 
 
 # Bind to localhost and an ephemeral port
