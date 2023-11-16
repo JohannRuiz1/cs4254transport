@@ -1,0 +1,80 @@
+#!/usr/bin/python3 -u
+#
+
+
+import sys
+import socket
+import time
+import datetime
+import select
+import json
+
+from base64 import b64decode
+
+def log(string):
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
+
+MSG_SIZE = 1500
+TIMEOUT = 30
+
+# Bind to localhost and an ephemeral port
+UDP_IP = "127.0.0.1"
+UDP_PORT = int(sys.argv[1])
+
+# Set up the sockets
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+sock.bind((UDP_IP, UDP_PORT))
+sock.settimeout(TIMEOUT)
+
+# Get port we bound to
+UDP_PORT = sock.getsockname()[1]
+log("[bound] " + str(UDP_PORT))
+LAST_SEQUENCE = -1
+
+def process_packet(decoded):
+  global LAST_SEQUENCE
+  sequence = decoded['sequence']
+
+  log("[recv data] " + str(decoded['sequence']) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
+  if (sequence == LAST_SEQUENCE):
+    log("[duplicates] data already receieved")
+  else:
+    sys.stdout.buffer.write(data)
+    sys.stderr.write("\n")
+    LAST_SEQUENCE = int(sequence)
+  # Send back an ack to the sender
+  msg = json.dumps({"ack": decoded['sequence'] + len(data)})
+  log("ABOUT TO SEND " + msg)
+  if sock.sendto(msg.encode(), addr) < len(msg):
+    log("[error] unable to fully send packet")
+
+
+# Now listen for packets
+while True:
+  try:
+    log("ABOUT TO SLEEP")
+    result = sock.recvfrom(MSG_SIZE)
+
+    # If nothing is ready, we hit the timeout
+    (data, addr) = result # note, data is bytes, so we must convert back to string before use
+    try:
+      decoded = json.loads(data.decode())
+
+      # If the EOF flag is set, exit
+      if (decoded['eof']):
+        log("[completed]")
+        sys.exit(0)
+
+      # If there is data, we accept it and print it out
+      if (decoded['data']):
+        data = b64decode(decoded['data'].encode())
+        sequence = str(decoded['sequence'])
+        cwnd = str(decoded['cwnd'])
+        # If we receive data, we assume it's in-order
+        # You will need to do much more here
+        process_packet(decoded)
+    except (ValueError, KeyError, TypeError) as e:
+      log("[recv corrupt packet] Error: {}".format(e))
+  except socket.timeout:
+    log("[error] timeout or fin happened")
+    sys.exit(0)
