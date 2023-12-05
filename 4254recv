@@ -33,7 +33,6 @@ UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
 
 EXPECTED_PACKET_NUM = 0
-WINDOW = 0
 packet_buffer = {}
 
 
@@ -43,10 +42,9 @@ def print_data(data):
 
 def process_packet(decoded, addr):
   global EXPECTED_PACKET_NUM
-
+  
   PACKET_NUM = decoded['sequence']
   data = b64decode(decoded['data'].encode())
-
   # Optimal Conditon: Recieve of PACKET_NUM=0 =? EXPECTED_PACKET_NUM
 
   log("[recv data] " + str(decoded['sequence']) + " (" + str(PACKET_NUM+1) + ") ACCEPTED")
@@ -65,13 +63,16 @@ def process_packet(decoded, addr):
       log("[process-of-order] processing out of order packets")
       buffered_packet = packet_buffer[EXPECTED_PACKET_NUM]
       print_data(b64decode(buffered_packet['data'].encode()))
+      msg = json.dumps({"ack": EXPECTED_PACKET_NUM})
+      sock.sendto(msg.encode(), addr)
       del packet_buffer[EXPECTED_PACKET_NUM]
       EXPECTED_PACKET_NUM+=1
 
   # Send back an ack to the sender
   msg = json.dumps({"ack": PACKET_NUM})
   log("ABOUT TO SEND " + msg)
-  if sock.sendto(msg.encode(), addr) < len(msg):
+  val = sock.sendto(msg.encode(), addr)
+  if val < len(msg):
     log("[error] unable to fully send packet")
   
 
