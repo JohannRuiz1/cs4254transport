@@ -19,7 +19,7 @@ import traceback
 MSG_SIZE = 1500
 # Currently at threshold with no added headers
 DATA_SIZE = 1065
-TIMEOUT = 0.5
+TIMEOUT = 0.2
 PACKETNUM = 0
 EXPECTED_ACK_NUM = 0
 TIMEOUT_COUNTER = 1
@@ -59,15 +59,16 @@ def log(string):
 
 def congestion_control(type):
   global WINDOW, SSTHRESH
+  file.write('CCA Mode: '+ type +'\n')
   if type == "SS":
     WINDOW = WINDOW * 2
   elif type == "CA":
     WINDOW = WINDOW + 1
   elif type == "FR":
-    WINDOW = min(WINDOW // 2, 1)
+    WINDOW = max(WINDOW // 2, 1)
   elif type == "TO":
     WINDOW = 1
-    SSTHRESH = min(SSTHRESH // 2, 1)
+    SSTHRESH = max(SSTHRESH // 2, 1)
 
 def send_next_packet():
   global PACKETNUM
@@ -126,7 +127,9 @@ while in_flight_packets:
             if DUPLICATE_COUNTER == 3:
               congestion_control("FR")
               DUPLICATE_COUNTER = 0
-            log("[send data] resending " + str(EXPECTED_ACK_NUM) + " (" + str(EXPECTED_ACK_NUM+1) + ")")
+            while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
+              EXPECTED_ACK_NUM+=1
+            log("[send data] resending " + str(EXPECTED_ACK_NUM))
             sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
 
         while(len(in_flight_packets) < WINDOW ):
