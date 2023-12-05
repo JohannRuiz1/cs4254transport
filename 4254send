@@ -10,18 +10,25 @@ import select
 import json
 
 from base64 import b64encode
+from datetime import datetime
+from enum import Enum
+import traceback 
+
+
 
 MSG_SIZE = 1500
 # Currently at threshold with no added headers
 DATA_SIZE = 1065
-TIMEOUT = 0.2
-# NOT USED
-SEQUENCE = 0
-# Assumes the advertised window is 1 (for part 3) (unit is bytes)
-WINDOW = 25
+TIMEOUT = 0.5
 PACKETNUM = 0
 EXPECTED_ACK_NUM = 0
 TIMEOUT_COUNTER = 1
+
+#CP3
+WINDOW = 1
+SSTHRESH = 32
+DUPLICATE_COUNTER = 0
+
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -33,23 +40,42 @@ time.sleep(0.5)
 
 in_flight_packets = {}
 
+
+# Get the current date and time
+current_time = datetime.now()
+log_file_name = current_time.strftime("data/log_%Y%m%d%H%M%S.txt")
+file = open(log_file_name, 'a')
+file.write("Starting Test, Timestamp: {}\n".format(current_time))
+
 # Set up the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
 sock.settimeout(TIMEOUT)
 
 def log(string):
   #logging takes away from time
-  placeholder=1
-  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
+  #placeholder=1
+  sys.stderr.write(datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
+
+
+def congestion_control(type):
+  global WINDOW, SSTHRESH
+  if type == "SS":
+    WINDOW = WINDOW * 2
+  elif type == "CA":
+    WINDOW = WINDOW + 1
+  elif type == "FR":
+    WINDOW = min(WINDOW // 2, 1)
+  elif type == "TO":
+    WINDOW = 1
+    SSTHRESH = min(SSTHRESH // 2, 1)
 
 def send_next_packet():
-  global SEQUENCE
   global PACKETNUM
   global msg
 
   data = sys.stdin.buffer.read(DATA_SIZE)
   if (len(data) > 0):
-    msg = json.dumps({"sequence": PACKETNUM, "data": b64encode(data).decode(), "ack": False, "eof": False, "cwnd": WINDOW})
+    msg = json.dumps({"sequence": PACKETNUM, "data": b64encode(data).decode(), "ack": False, "eof": False})
     # Calculate the number of bytes in the serialized JSON string
     # msg_bytes = len(msg.encode())
     # log("Size of 'msg' in bytes: " + str(msg_bytes))
@@ -57,11 +83,12 @@ def send_next_packet():
     if sock.sendto(msg.encode(), dest) < len(msg):
       log("[error] unable to fully send packet")
     else:
-      log("[send data] " + str(PACKETNUM) + " (" + str(PACKETNUM+1) + ")")
+      log("[send data] " + str(PACKETNUM))
     PACKETNUM+=1
     return True
   else:
     return False
+  
 
 # Send first window
 for i in range(WINDOW):
@@ -71,45 +98,66 @@ for i in range(WINDOW):
 # Now read in data, send packets
 while in_flight_packets:
   log("ABOUT TO SLEEP")
+  # Write content to the file
+  file.write('Window Size: '+ str(WINDOW) +'\n')
   try: 
     result = sock.recvfrom(MSG_SIZE)
     if result:
       (data, addr) = result
       try:
         decoded = json.loads(data.decode())
-        log("[recv pkt] " + str(decoded))
-        log("[recv ack] " + str(decoded['ack']))
-
-
-        if in_flight_packets[decoded['ack']]:
+        if decoded['ack'] in in_flight_packets:
           log("[in_flight_packets] deleting " + str(decoded['ack']))
           del in_flight_packets[decoded['ack']]
-          send_next_packet()
           # If there is an ack, send next packet
           if decoded['ack'] == EXPECTED_ACK_NUM:
+            log("[recv pkt] recieved expected packet")
             # If the ack is what is expected, move the window
-            EXPECTED_ACK_NUM+=1
+            if WINDOW < SSTHRESH:
+              congestion_control("SS")
+            else:
+              congestion_control("CA")
+            EXPECTED_ACK_NUM += 1
+            DUPLICATE_COUNTER = 0
           else:
             # Resend the packet it was expecting
+            log("[recv pkt] recieved unexpected packet")
+            DUPLICATE_COUNTER += 1
+            if DUPLICATE_COUNTER == 3:
+              congestion_control("FR")
+              DUPLICATE_COUNTER = 0
             log("[send data] resending " + str(EXPECTED_ACK_NUM) + " (" + str(EXPECTED_ACK_NUM+1) + ")")
             sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
 
-
+        while(len(in_flight_packets) < WINDOW ):
+          if( not send_next_packet()):
+            break
       except (ValueError, KeyError, TypeError) as e:
-        log("[recv corrupt packet] Error: {}".format(e))
+        traceback.print_exc() 
+        log("[recv corrupt packet] Error: {}".format(str(e)))
+        
   except socket.timeout:
     # We need to resend the packet if a timeout is hit (using the sequence number)
     TIMEOUT_COUNTER+=1
+    DUPLICATE_COUNTER = 0
     log("[error] timeout, resending last packet")
     while EXPECTED_ACK_NUM not in in_flight_packets:
       EXPECTED_ACK_NUM+=1
+    
+    # ssthresh = cwnd/2 (decrease the slow start threshold)
+    # cwnd = MSS (restart slow start)
+    congestion_control("TO")
+    # retransmit lost packet
     sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
-    sock.settimeout(TIMEOUT)
+
+
   
 log("Sending EOF Packet")
 for i in range(int(TIMEOUT_COUNTER)):
-  msg = json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False, "cwnd": WINDOW})
+  msg = json.dumps({"eof": True, "data": "", "sequence": PACKETNUM, "ack": False, "cwnd": WINDOW})
   sock.sendto(msg.encode(), dest)
+
+file.close()
 
 log("[completed] closing connection")
 sys.exit(0)

@@ -13,8 +13,8 @@ from base64 import b64decode
 
 def log(string):
   #logging takes away from time
-  placeholder=1
-  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
+  #placeholder=1
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
 
 MSG_SIZE = 1500
 TIMEOUT = 30
@@ -33,6 +33,7 @@ UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
 
 EXPECTED_PACKET_NUM = 0
+WINDOW = 0
 packet_buffer = {}
 
 
@@ -68,7 +69,7 @@ def process_packet(decoded, addr):
       EXPECTED_PACKET_NUM+=1
 
   # Send back an ack to the sender
-  msg = json.dumps({"ack": decoded['sequence']})
+  msg = json.dumps({"ack": PACKET_NUM})
   log("ABOUT TO SEND " + msg)
   if sock.sendto(msg.encode(), addr) < len(msg):
     log("[error] unable to fully send packet")
@@ -92,7 +93,6 @@ while True:
 
       # If there is data, we accept it and print it out
       if (decoded['data']):
-        cwnd = str(decoded['cwnd'])
         ## CONGESTION CONTROL
 
         ##
