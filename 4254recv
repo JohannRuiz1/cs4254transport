@@ -12,7 +12,9 @@ import json
 from base64 import b64decode
 
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
+  #logging takes away from time
+  placeholder=1
+  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
 
 MSG_SIZE = 1500
 TIMEOUT = 30
@@ -29,30 +31,48 @@ sock.settimeout(TIMEOUT)
 # Get port we bound to
 UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
-EXPECTED_SEQUENCE = 0
 
-def process_packet(decoded):
-  global EXPECTED_SEQUENCE
-  packet_buffer = {}
+EXPECTED_PACKET_NUM = 0
+packet_buffer = {}
 
-  sequence = decoded['sequence']
 
-  log("[recv data] " + str(decoded['sequence']) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
-  if (sequence != EXPECTED_SEQUENCE):
-    if (sequence <= EXPECTED_SEQUENCE):
+def print_data(data):
+  sys.stdout.buffer.write(data)
+  sys.stderr.write("\n")
+
+def process_packet(decoded, addr):
+  global EXPECTED_PACKET_NUM
+
+  PACKET_NUM = decoded['sequence']
+  data = b64decode(decoded['data'].encode())
+
+  # Optimal Conditon: Recieve of PACKET_NUM=0 =? EXPECTED_PACKET_NUM
+
+  log("[recv data] " + str(decoded['sequence']) + " (" + str(PACKET_NUM+1) + ") ACCEPTED")
+  if (PACKET_NUM != EXPECTED_PACKET_NUM):
+    if (PACKET_NUM < EXPECTED_PACKET_NUM):
       log("[duplicates] data already receieved")
     else:
-      log("[out-of-order] recieved ")
+      log("[out-of-order] recieved packet out of order")
+      packet_buffer[PACKET_NUM] = decoded
   else:
-    sys.stdout.buffer.write(data)
-    sys.stderr.write("\n")
-    EXPECTED_SEQUENCE += len(data)
+    print_data(data)
+    EXPECTED_PACKET_NUM+=1
+
+    while (EXPECTED_PACKET_NUM in packet_buffer):
+      # Process the buffered packet
+      log("[process-of-order] processing out of order packets")
+      buffered_packet = packet_buffer[EXPECTED_PACKET_NUM]
+      print_data(b64decode(buffered_packet['data'].encode()))
+      del packet_buffer[EXPECTED_PACKET_NUM]
+      EXPECTED_PACKET_NUM+=1
 
   # Send back an ack to the sender
-  msg = json.dumps({"ack": decoded['sequence'] + len(data)})
+  msg = json.dumps({"ack": decoded['sequence']})
   log("ABOUT TO SEND " + msg)
   if sock.sendto(msg.encode(), addr) < len(msg):
     log("[error] unable to fully send packet")
+  
 
 
 # Now listen for packets
@@ -63,42 +83,28 @@ while True:
     # If nothing is ready, we hit the timeout
     (data, addr) = result # note, data is bytes, so we must convert back to string before use
     try:
-      decoded = json.loads(data.decode())
-      
+      decoded = json.loads(data.decode())  
       # If the EOF flag is set, exit
       if (decoded['eof']):
-        log("[completed]")
+        log("[completed] Size of buffer " +str(len(packet_buffer)))
+        log("[debug] ")
         sys.exit(0)
 
       # If there is data, we accept it and print it out
       if (decoded['data']):
-        data = b64decode(decoded['data'].encode())
-        sequence = str(decoded['sequence'])
         cwnd = str(decoded['cwnd'])
+        ## CONGESTION CONTROL
+
+        ##
         # If we receive data, we assume it's in-order
         # You will need to do much more here
-        process_packet(decoded)
+        process_packet(decoded, addr)
+
     except (ValueError, KeyError, TypeError) as e:
       log("[recv corrupt packet] Error: {}".format(e))
   except socket.timeout:
+    log("[completed] Size of buffer " +str(len(packet_buffer)))
     log("[error] timeout or fin happened")
-    sys.exit(0)
+    break;
 
-
-# Example buffer structure
-packet_buffer = {}
-expected_sequence = 0  # Initialize with the expected sequence number
-if decoded['sequence'] == expected_sequence:
-    # Process the packet
-    process_packet(decoded)
-    expected_sequence += len(data)
-else:
-    # Buffer the out-of-order packet
-    packet_buffer[decoded['sequence']] = decoded
-
-while (expected_sequence in packet_buffer):
-    # Process the buffered packet
-    buffered_packet = packet_buffer[expected_sequence]
-    process_packet(buffered_packet)
-    del packet_buffer[expected_sequence]
-    expected_sequence += len(buffered_packet['data'])
+sys.exit(0)
