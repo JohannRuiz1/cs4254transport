@@ -39,8 +39,8 @@ sock.settimeout(TIMEOUT)
 
 def log(string):
   #logging takes away from time
-  placeholder=1
-  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
+  #placeholder=1
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
 
 def send_next_packet():
   global SEQUENCE
@@ -81,7 +81,7 @@ while in_flight_packets:
         log("[recv ack] " + str(decoded['ack']))
 
 
-        if in_flight_packets[decoded['ack']]:
+        if decoded['ack'] in in_flight_packets:
           log("[in_flight_packets] deleting " + str(decoded['ack']))
           del in_flight_packets[decoded['ack']]
           send_next_packet()

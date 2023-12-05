@@ -13,8 +13,8 @@ from base64 import b64decode
 
 def log(string):
   #logging takes away from time
-  placeholder=1
-  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
+  #placeholder=1
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254recv: " + string + "\n")
 
 MSG_SIZE = 1500
 TIMEOUT = 30
