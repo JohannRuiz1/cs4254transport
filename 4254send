@@ -18,7 +18,7 @@ import traceback
 
 MSG_SIZE = 1500
 # Currently at threshold with no added headers
-DATA_SIZE = 1065
+DATA_SIZE = 1050 # TODO CHANGE THIS
 TIMEOUT = 0.2
 PACKETNUM = 0
 EXPECTED_ACK_NUM = 0
@@ -67,7 +67,7 @@ def congestion_control(type):
   elif type == "FR":
     WINDOW = max(WINDOW // 2, 1)
   elif type == "TO":
-    WINDOW = 1
+    WINDOW = 1xs
     SSTHRESH = max(SSTHRESH // 2, 1)
 
 def send_next_packet():
@@ -76,7 +76,7 @@ def send_next_packet():
 
   data = sys.stdin.buffer.read(DATA_SIZE)
   if (len(data) > 0):
-    msg = json.dumps({"sequence": PACKETNUM, "data": b64encode(data).decode(), "ack": False, "eof": False})
+    msg = json.dumps({"sequence": PACKETNUM, "data": b64encode(data).decode(), "ack": False, "eof": False,  "cwnd": WINDOW})
     # Calculate the number of bytes in the serialized JSON string
     # msg_bytes = len(msg.encode())
     # log("Size of 'msg' in bytes: " + str(msg_bytes))

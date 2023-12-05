@@ -43,8 +43,10 @@ def print_data(data):
 
 def process_packet(decoded, addr):
   global EXPECTED_PACKET_NUM
+  global WINDOW
 
   PACKET_NUM = decoded['sequence']
+  WINDOW = decoded['cwnd']
   data = b64decode(decoded['data'].encode())
 
   # Optimal Conditon: Recieve of PACKET_NUM=0 =? EXPECTED_PACKET_NUM
