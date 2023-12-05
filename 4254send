@@ -13,12 +13,15 @@ from base64 import b64encode
 
 MSG_SIZE = 1500
 # Currently at threshold with no added headers
-DATA_SIZE = 1060
-TIMEOUT = 5
+DATA_SIZE = 1065
+TIMEOUT = 0.2
+# NOT USED
 SEQUENCE = 0
 # Assumes the advertised window is 1 (for part 3) (unit is bytes)
-ADVWINDOW = 1
-
+WINDOW = 25
+PACKETNUM = 0
+EXPECTED_ACK_NUM = 0
+TIMEOUT_COUNTER = 1
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -28,40 +31,45 @@ dest = (UDP_IP, UDP_PORT)
 
 time.sleep(0.5)
 
+in_flight_packets = {}
+
 # Set up the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
 sock.settimeout(TIMEOUT)
 
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
+  #logging takes away from time
+  placeholder=1
+  #sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " 4254send: " + string + "\n")
 
 def send_next_packet():
   global SEQUENCE
+  global PACKETNUM
   global msg
 
   data = sys.stdin.buffer.read(DATA_SIZE)
   if (len(data) > 0):
-    msg = json.dumps({"sequence": SEQUENCE, "data": b64encode(data).decode(), "ack": False, "eof": False, "cwnd": ADVWINDOW})
+    msg = json.dumps({"sequence": PACKETNUM, "data": b64encode(data).decode(), "ack": False, "eof": False, "cwnd": WINDOW})
     # Calculate the number of bytes in the serialized JSON string
-    msg_bytes = len(msg.encode())
-    log("Size of 'msg' in bytes: " + str(msg_bytes))
-
-    #sock.sendto(msg.encode(), dest) # ==> Sending one packet
-
+    # msg_bytes = len(msg.encode())
+    # log("Size of 'msg' in bytes: " + str(msg_bytes))
+    in_flight_packets[PACKETNUM] = msg
     if sock.sendto(msg.encode(), dest) < len(msg):
       log("[error] unable to fully send packet")
     else:
-      log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
-    SEQUENCE+=len(data)
+      log("[send data] " + str(PACKETNUM) + " (" + str(PACKETNUM+1) + ")")
+    PACKETNUM+=1
     return True
   else:
     return False
 
-# Send first packet
-send_next_packet()
+# Send first window
+for i in range(WINDOW):
+  if( not send_next_packet()):
+    break
 
 # Now read in data, send packets
-while True:
+while in_flight_packets:
   log("ABOUT TO SLEEP")
   try: 
     result = sock.recvfrom(MSG_SIZE)
@@ -72,24 +80,36 @@ while True:
         log("[recv pkt] " + str(decoded))
         log("[recv ack] " + str(decoded['ack']))
 
-        # If there is an ack, send next packet
-        if decoded['ack'] == SEQUENCE:
-          # Try to send next packet; break if no more data
-          if (not send_next_packet()):
-            log("Sending EOF Packet")
-            msg = json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False, "cwnd": ADVWINDOW})
-            sock.sendto(msg.encode(), dest)
-            break;
-            
+
+        if in_flight_packets[decoded['ack']]:
+          log("[in_flight_packets] deleting " + str(decoded['ack']))
+          del in_flight_packets[decoded['ack']]
+          send_next_packet()
+          # If there is an ack, send next packet
+          if decoded['ack'] == EXPECTED_ACK_NUM:
+            # If the ack is what is expected, move the window
+            EXPECTED_ACK_NUM+=1
+          else:
+            # Resend the packet it was expecting
+            log("[send data] resending " + str(EXPECTED_ACK_NUM) + " (" + str(EXPECTED_ACK_NUM+1) + ")")
+            sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
+
+
       except (ValueError, KeyError, TypeError) as e:
-            log("[recv corrupt packet] Error: {}".format(e))
+        log("[recv corrupt packet] Error: {}".format(e))
   except socket.timeout:
     # We need to resend the packet if a timeout is hit (using the sequence number)
+    TIMEOUT_COUNTER+=1
     log("[error] timeout, resending last packet")
-    # Isn't msg still the content from the last packet?
-    # log("[resend data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
-    sock.sendto(msg.encode(), dest)
-    #sys.exit(-1) #This will be removed
+    while EXPECTED_ACK_NUM not in in_flight_packets:
+      EXPECTED_ACK_NUM+=1
+    sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
+    sock.settimeout(TIMEOUT)
+  
+log("Sending EOF Packet")
+for i in range(int(TIMEOUT_COUNTER)):
+  msg = json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False, "cwnd": WINDOW})
+  sock.sendto(msg.encode(), dest)
 
 log("[completed] closing connection")
 sys.exit(0)
