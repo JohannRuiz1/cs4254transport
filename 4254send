@@ -20,8 +20,8 @@ MSG_SIZE = 1500
 # Currently at threshold with no added headers
 DATA_SIZE = 1065
 TIMEOUT = 0.2
-PACKETNUM = 0
-EXPECTED_ACK_NUM = 0
+PACKETNUM = 1
+EXPECTED_ACK_NUM = 1
 LAST_PACKET_NUM = -1
 TIMEOUT_COUNTER = 1
 
@@ -65,6 +65,8 @@ def congestion_control(type):
     WINDOW = WINDOW * 2
   elif type == "CA":
     WINDOW = WINDOW + 1
+  elif type == "CA":
+    WINDOW = max(WINDOW // 2, 1)
   elif type == "TO":
     WINDOW = 1
     SSTHRESH = max(SSTHRESH // 2, 1)
@@ -108,10 +110,19 @@ while in_flight_packets:
       try:
         decoded = json.loads(data.decode())
         if decoded['ack'] in in_flight_packets:
-          log("[in_flight_packets] deleting " + str(decoded['ack']))
-          del in_flight_packets[decoded['ack']]
-          # If there is an ack, send next packet
-          if decoded['ack'] == EXPECTED_ACK_NUM:
+          cAck = decoded['ack']
+          # Case 1: cumalative ack is greater than what the sender is expecting
+          # cAck = 1, EXPECTED_ACK_NUM = 1
+          if cAck > EXPECTED_ACK_NUM:
+            # The receiever has received all the packets up to this number, so we can remove them from out in-flight
+            # Occurs when out-of-order packets are processed
+            log("[recv pkt] recieved ooo packet")
+            while(EXPECTED_ACK_NUM < cAck):
+              del in_flight_packets[EXPECTED_ACK_NUM]
+              EXPECTED_ACK_NUM+=1
+          # Case 2: Cumaltive Ack is equal to what the sender is expecting
+          else: 
+            del in_flight_packets[cAck]
             log("[recv pkt] recieved expected packet")
             # If the ack is what is expected, move the window
             if WINDOW < SSTHRESH:
@@ -120,23 +131,19 @@ while in_flight_packets:
               congestion_control("CA")
             EXPECTED_ACK_NUM += 1
             DUPLICATE_COUNTER = 0
-          else:
-            # Resend the packet it was expecting
-            log("[recv pkt] recieved unexpected packet")
-            file.write('Out of Order Packet\n')
-            while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
-              EXPECTED_ACK_NUM+=1
-
+            # Sending the WINDOW
+            while(len(in_flight_packets) < WINDOW ):
+              if( not send_next_packet()):
+                #sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
+                break
+        else:
+          # Duplicate ACK
+          DUPLICATE_COUNTER+=1
+          if DUPLICATE_COUNTER == 3:
+            DUPLICATE_COUNTER=0
+            congestion_control("FA")
             log("[send data] resending " + str(EXPECTED_ACK_NUM))
             sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
-
-        while(len(in_flight_packets) < WINDOW ):
-          if( not send_next_packet()):
-            while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
-              EXPECTED_ACK_NUM+=1
-            sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
-            break
-
              
       except (ValueError, KeyError, TypeError) as e:
         traceback.print_exc() 
@@ -149,7 +156,6 @@ while in_flight_packets:
     log("[error] timeout, resending last packet")
     while EXPECTED_ACK_NUM not in in_flight_packets:
       EXPECTED_ACK_NUM+=1
-    
     # ssthresh = cwnd/2 (decrease the slow start threshold)
     # cwnd = MSS (restart slow start)
     congestion_control("TO")

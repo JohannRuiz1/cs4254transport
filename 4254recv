@@ -69,7 +69,7 @@ def process_packet(decoded, addr):
       EXPECTED_PACKET_NUM+=1
 
   # Send back an ack to the sender
-  msg = json.dumps({"ack": PACKET_NUM})
+  msg = json.dumps({"ack": EXPECTED_PACKET_NUM})
   log("ABOUT TO SEND " + msg)
   val = sock.sendto(msg.encode(), addr)
   if val < len(msg):
