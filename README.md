@@ -16,3 +16,25 @@ Performance tests
   large 10 Mb/s, 25 ms, 10% drop, 10% duplicate 20% delay   [DATAOK]
     3.221 sec elapsed, 97KB sent
     Rate: 242Kb/s                                           [PERF3]
+
+
+while(len(in_flight_packets) < WINDOW ):
+    if( not send_next_packet()):
+    while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
+        EXPECTED_ACK_NUM+=1
+    sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
+    break                                [PERF4]
+
+Performance tests
+  huge 5 Mb/s, 10 ms, 0% drop, 0% duplicate 0% delay        [DATAOK]
+    1.102 sec elapsed, 976KB sent
+    Rate: 6Mb/s                                             [ OKAY ]
+  large 5 Mb/s, 10 ms, 10% drop, 0% duplicate 0% delay      [DATAOK]
+    1.147 sec elapsed, 97KB sent
+    Rate: 681Kb/s                                           [PERF20]
+  large 5 Mb/s, 50 ms, 10% drop, 0% duplicate 0% delay      [DATAOK]
+    3.547 sec elapsed, 97KB sent
+    Rate: 220Kb/s                                           [PERF7]
+  large 10 Mb/s, 25 ms, 10% drop, 10% duplicate 20% delay   [DATAOK]
+    2.263 sec elapsed, 97KB sent
+    Rate: 345Kb/s                                           [PERF5]

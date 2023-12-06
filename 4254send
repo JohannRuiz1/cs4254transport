@@ -22,11 +22,12 @@ DATA_SIZE = 1065
 TIMEOUT = 0.2
 PACKETNUM = 0
 EXPECTED_ACK_NUM = 0
+LAST_PACKET_NUM = -1
 TIMEOUT_COUNTER = 1
 
 #CP3
 WINDOW = 1
-SSTHRESH = 50
+SSTHRESH = 32
 DUPLICATE_COUNTER = 0
 
 
@@ -64,8 +65,6 @@ def congestion_control(type):
     WINDOW = WINDOW * 2
   elif type == "CA":
     WINDOW = WINDOW + 1
-  elif type == "FR":
-    WINDOW = max(WINDOW // 2, 1)
   elif type == "TO":
     WINDOW = 1
     SSTHRESH = max(SSTHRESH // 2, 1)
@@ -100,6 +99,7 @@ for i in range(WINDOW):
 while in_flight_packets:
   log("ABOUT TO SLEEP")
   # Write content to the file
+  file.write('In-Flight Packets: '+ str(len(in_flight_packets)) +'\n')
   file.write('Window Size: '+ str(WINDOW) +'\n')
   try: 
     result = sock.recvfrom(MSG_SIZE)
@@ -123,19 +123,21 @@ while in_flight_packets:
           else:
             # Resend the packet it was expecting
             log("[recv pkt] recieved unexpected packet")
-            DUPLICATE_COUNTER += 1
-            if DUPLICATE_COUNTER == 3:
-              congestion_control("FR")
-              DUPLICATE_COUNTER = 0
+            file.write('Out of Order Packet\n')
             while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
               EXPECTED_ACK_NUM+=1
+
             log("[send data] resending " + str(EXPECTED_ACK_NUM))
             sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
 
         while(len(in_flight_packets) < WINDOW ):
           if( not send_next_packet()):
+            while len(in_flight_packets) != 0 and EXPECTED_ACK_NUM not in in_flight_packets:
+              EXPECTED_ACK_NUM+=1
+            sock.sendto(in_flight_packets[EXPECTED_ACK_NUM].encode(), dest)
             break
-          
+
+             
       except (ValueError, KeyError, TypeError) as e:
         traceback.print_exc() 
         log("[recv corrupt packet] Error: {}".format(str(e)))
